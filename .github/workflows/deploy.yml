@@ -1,0 +1,74 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-check:
+    name: Typecheck, lint, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter api exec prisma generate
+
+      - name: Typecheck API
+        run: pnpm --filter api exec tsc --noEmit
+
+      - name: Typecheck Web
+        run: pnpm --filter web exec tsc --noEmit
+
+      # Non-blocking for now: the repo has pre-existing lint debt unrelated
+      # to any single change. Flip to blocking once that's cleaned up.
+      - name: Lint API
+        run: pnpm --filter api exec eslint .
+        continue-on-error: true
+
+      - name: Lint Web
+        run: pnpm --filter web exec eslint .
+        continue-on-error: true
+
+      - run: pnpm build
+
+  deploy:
+    name: Deploy to production
+    needs: build-and-check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          script_stop: true
+          script: |
+            set -e
+            cd /var/www/html/ims
+            git fetch origin
+            git reset --hard origin/main
+            pnpm install
+            pnpm --filter api exec prisma generate
+            pnpm --filter api exec prisma migrate deploy
+            pnpm build
+            chown -R ims:ims /var/www/html/ims
+            systemctl restart ims-api
+            systemctl restart ims-web
+            sleep 2
+            systemctl is-active ims-api
+            systemctl is-active ims-web

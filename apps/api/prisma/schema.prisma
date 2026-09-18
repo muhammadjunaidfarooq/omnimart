@@ -1,0 +1,623 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+model User {
+  id               String   @id @default(uuid())
+  name             String
+  email            String   @unique
+  passwordHash     String
+  role             Role
+  isActive         Boolean  @default(true)
+  refreshTokenHash String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  stockMovements        StockMovement[]
+  stockBatchesCreated   StockBatch[]
+  sales                 Sale[]
+  refundsIssued         Refund[]
+  expenses              Expense[]
+  khataPaymentsReceived KhataPayment[]
+  serviceTransactions   ServiceTransaction[]
+  dayClosings           DayClosing[]
+
+  @@map("users")
+}
+
+model Category {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  description   String?
+  /// When true, cashiers never see this category or its products in the POS — admins are unaffected
+  hiddenFromPos Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Brand {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("brands")
+}
+
+model Unit {
+  id                       String   @id @default(uuid())
+  name                     String   @unique
+  abbreviation             String
+  /// When true, products in this unit can be sold/stocked in fractional quantities (e.g. 0.25 kg)
+  allowsFractionalQuantity Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  products Product[]
+
+  @@map("units")
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model Product {
+  id          String  @id @default(uuid())
+  sku         String  @unique
+  name        String
+  description String?
+  imageUrl    String?
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  brandId    String?
+  brand      Brand?   @relation(fields: [brandId], references: [id])
+  unitId     String
+  unit       Unit     @relation(fields: [unitId], references: [id])
+
+  /// Cost price, in cents
+  costPrice    Int
+  /// Selling price, in cents
+  sellingPrice Int
+  /// Tax rate in basis points (1/100th of a percent) — e.g. 1000 = 10.00%
+  taxRateBps   Int @default(0)
+
+  discountType  DiscountType?
+  /// Meaning depends on discountType: basis points if PERCENTAGE, cents if FIXED
+  discountValue Int?
+
+  /// Fractional for weight/volume units (e.g. Kg, Litre) — see Unit.allowsFractionalQuantity
+  minimumStockLevel Decimal @default(0) @db.Decimal(10, 3)
+  /// Only ever mutated by InventoryService via a StockMovement — never written to directly
+  currentStock      Decimal @default(0) @db.Decimal(10, 3)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockMovements StockMovement[]
+  stockBatches   StockBatch[]
+  saleItems      SaleItem[]
+  refundItems    RefundItem[]
+
+  @@map("products")
+}
+
+/// A single received quantity of a product, tracked independently so the same
+/// product can carry multiple expiry dates at once. Sales/adjustments always
+/// draw down the earliest-expiring non-depleted batch first (FEFO).
+model StockBatch {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  /// Quantity originally received into this batch
+  quantity          Decimal @db.Decimal(10, 3)
+  /// Quantity still available — only ever mutated by InventoryService
+  remainingQuantity Decimal @db.Decimal(10, 3)
+
+  /// Captured at receipt time — defaults to the product's current price
+  /// unless overridden at stock-in. Sales always charge (and COGS always
+  /// costs) from the active — earliest non-depleted — batch's price, not
+  /// the product's current price, so an old batch keeps its old price
+  /// until it's fully sold through.
+  costPrice    Int
+  sellingPrice Int
+
+  /// Null = this batch does not expire. Null-expiry batches are always
+  /// consumed after every dated batch in FEFO order.
+  expiryDate DateTime?
+  reason     String?
+
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  stockMovements  StockMovement[]
+  saleItemBatches SaleItemBatch[]
+
+  @@index([productId, expiryDate])
+  @@map("stock_batches")
+}
+
+/// Singleton row (id = 1) used to atomically generate gapless sequential SKUs
+model SkuCounter {
+  id        Int @id @default(1)
+  lastValue Int @default(0)
+
+  @@map("sku_counters")
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+model StockMovement {
+  id        String            @id @default(uuid())
+  productId String
+  product   Product           @relation(fields: [productId], references: [id])
+  type      StockMovementType
+  /// Signed delta applied to Product.currentStock (positive = increase, negative = decrease); `type` is for audit categorization only
+  quantity  Decimal           @db.Decimal(10, 3)
+  reason    String?
+  userId    String
+  user      User              @relation(fields: [userId], references: [id])
+  /// The batch this delta was applied to — null only for ledger rows written before batch tracking existed
+  batchId   String?
+  batch     StockBatch?       @relation(fields: [batchId], references: [id])
+  createdAt DateTime          @default(now())
+
+  @@map("stock_movements")
+}
+
+enum SaleStatus {
+  DRAFT
+  COMPLETED
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  CREDIT
+  /// Part of the total paid in cash at checkout, the rest billed to a borrower as khata
+  SPLIT
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+model Borrower {
+  id            String   @id @default(uuid())
+  name          String
+  phone         String?
+  /// Cents the store owes this borrower from a khata overpayment — only ever
+  /// written by KhataService, and auto-applied to reduce the amount due the
+  /// next time this borrower buys on CREDIT/SPLIT.
+  creditBalance Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sales Sale[]
+
+  @@index([name])
+  @@index([phone])
+  @@map("borrowers")
+}
+
+model KhataPayment {
+  id           String   @id @default(uuid())
+  saleId       String
+  sale         Sale     @relation(fields: [saleId], references: [id])
+  /// Cents received in this settlement — only ever written by KhataService.recordPayment
+  amount       Int
+  /// How this settlement was actually received — CASH/TRANSFER for a new incoming payment (counts toward AccountingService.getDailyCashSummary for the day it's received), CREDIT when settled from the borrower's existing store credit instead (no new cash movement — see KhataService.payFromCredit). Defaults to CASH for rows recorded before this field existed.
+  method       PaymentMethod @default(CASH)
+  /// Bank reference for a TRANSFER settlement, mirrors Sale.transferReference
+  transferReference String?
+  receivedById String
+  receivedBy   User     @relation(fields: [receivedById], references: [id])
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@map("khata_payments")
+}
+
+/// Singleton row (id = 1) used to atomically generate gapless sequential invoice numbers
+model InvoiceCounter {
+  id        Int @id @default(1)
+  lastValue Int @default(0)
+
+  @@map("invoice_counters")
+}
+
+model Sale {
+  id            String     @id @default(uuid())
+  invoiceNumber String     @unique
+  status        SaleStatus @default(DRAFT)
+
+  cashierId String
+  cashier   User   @relation(fields: [cashierId], references: [id])
+
+  /// Sum of line subtotals (unitPrice * quantity), in cents
+  subtotal      Int
+  /// Sum of line discounts, in cents
+  discountTotal Int
+  /// Sum of line taxes, in cents
+  taxTotal      Int
+  /// subtotal - discountTotal + taxTotal, in cents
+  totalAmount   Int
+
+  paymentMethod     PaymentMethod?
+  /// Cents tendered by the customer — set for CASH payments (may exceed the total) and the cash portion of a SPLIT payment
+  cashTendered      Int?
+  /// cashTendered - totalAmount — only set for CASH payments
+  changeDue         Int?
+  transferReference String?
+
+  /// PAID for CASH/TRANSFER (settled on the spot); UNPAID/PARTIALLY_PAID/PAID for CREDIT/SPLIT (khata) sales
+  paymentStatus PaymentStatus @default(PAID)
+  /// Cumulative cents paid so far. Set to totalAmount at checkout for CASH/TRANSFER; starts at cashTendered (0 for pure CREDIT) for CREDIT/SPLIT and only moves via KhataService.recordPayment
+  amountPaid    Int           @default(0)
+  borrowerId    String?
+  borrower      Borrower?     @relation(fields: [borrowerId], references: [id])
+
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items         SaleItem[]
+  refunds       Refund[]
+  khataPayments KhataPayment[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id     String @id @default(uuid())
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  /// Snapshots of the product at time of sale, so historical invoices are stable
+  productName String
+  sku         String
+
+  /// Fractional for weight/volume units (e.g. Kg, Litre) — see Unit.allowsFractionalQuantity
+  quantity   Decimal @db.Decimal(10, 3)
+  /// Selling price snapshot, in cents
+  unitPrice  Int
+  /// Tax rate snapshot, in basis points
+  taxRateBps Int
+
+  discountType  DiscountType?
+  /// Meaning depends on discountType: basis points if PERCENTAGE, cents if FIXED
+  discountValue Int?
+
+  /// unitPrice * quantity, in cents
+  lineSubtotal Int
+  lineDiscount Int
+  lineTax      Int
+  /// lineSubtotal - lineDiscount + lineTax, in cents
+  lineTotal    Int
+
+  refundItems       RefundItem[]
+  batchConsumptions SaleItemBatch[]
+
+  @@map("sale_items")
+}
+
+/// Records which batch(es) a sale line drew stock from, in FEFO consumption
+/// order — lets a refund restock the exact batch(es) it was drawn from.
+model SaleItemBatch {
+  id         String     @id @default(uuid())
+  saleItemId String
+  saleItem   SaleItem   @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  batchId    String
+  batch      StockBatch @relation(fields: [batchId], references: [id])
+
+  /// Quantity of the sale line drawn from this batch
+  quantity  Decimal  @db.Decimal(10, 3)
+  createdAt DateTime @default(now())
+
+  @@map("sale_item_batches")
+}
+
+/// Audit trail for a return/refund against a completed Sale. Never mutates
+/// the original Sale or SaleItem rows — reverses stock and is its own record.
+model Refund {
+  id           String  @id @default(uuid())
+  saleId       String
+  sale         Sale    @relation(fields: [saleId], references: [id])
+  refundedById String
+  refundedBy   User    @relation(fields: [refundedById], references: [id])
+  reason       String?
+
+  /// Sums of the refunded RefundItem lines, in cents
+  subtotal      Int
+  discountTotal Int
+  taxTotal      Int
+  totalAmount   Int
+
+  createdAt DateTime @default(now())
+
+  items RefundItem[]
+
+  @@map("refunds")
+}
+
+model RefundItem {
+  id       String @id @default(uuid())
+  refundId String
+  refund   Refund @relation(fields: [refundId], references: [id], onDelete: Cascade)
+
+  /// The original sale line this refund quantity is drawn from
+  saleItemId String
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id])
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+
+  /// Quantity being returned — must not exceed the SaleItem's remaining refundable quantity
+  quantity  Decimal @db.Decimal(10, 3)
+  /// Copied from the original SaleItem for display; refund math derives from the original line's totals, not this
+  unitPrice Int
+
+  /// Proportional shares of the original SaleItem's lineDiscount/lineTax/lineTotal for this quantity
+  lineDiscount Int
+  lineTax      Int
+  lineTotal    Int
+
+  @@map("refund_items")
+}
+
+enum ExpenseCategory {
+  RENT
+  ELECTRICITY
+  INTERNET
+  FUEL
+  MAINTENANCE
+  MISC
+}
+
+model Expense {
+  id          String          @id @default(uuid())
+  category    ExpenseCategory
+  /// Amount, in cents
+  amount      Int
+  description String?
+  /// The date the expense was incurred (distinct from createdAt, so past expenses can be logged)
+  date        DateTime
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("expenses")
+}
+
+/// A bill-payment/agent-service the store offers alongside product sales —
+/// e.g. Electricity Bill, Easyload, ID Card Biometric. Admin-managed; only
+/// active services are offered to the cashier at the POS.
+enum ServiceDirection {
+  /// The customer pays the shop (CASH/TRANSFER); serviceFee is store revenue, billAmount passes through
+  BILL_PAYMENT
+  /// The shop hands the customer physical cash, funded by a bank transfer the customer already made — a cash outflow. May charge a fee, deducted from the cash paid out.
+  CASH_WITHDRAWAL
+  /// The customer hands the shop physical cash, and the shop transfers the same amount out on their behalf — a cash inflow. May charge a fee, collected on top of the cash handed over.
+  CASH_DEPOSIT
+}
+
+model Service {
+  id   String @id @default(uuid())
+  name String @unique
+
+  /// Determines which fields ServiceTransactionsService.create expects and
+  /// how AccountingService treats the transaction's cash-flow direction —
+  /// see ServiceDirection. The fee fields below apply to every direction;
+  /// see ServiceTransactionsService.buildCashFlowData for where the fee
+  /// lands (added to the deposit vs. deducted from the withdrawal payout).
+  direction ServiceDirection @default(BILL_PAYMENT)
+
+  /// Cents — prefills the cashier's service fee field for a transaction on
+  /// this service; the cashier can still adjust it per-transaction. Null
+  /// means no fee by default. Ignored when useTieredFee is true.
+  defaultFee Int?
+
+  /// When true, the fee is computed automatically from the bill amount
+  /// instead of using defaultFee — see feePerThousand.
+  useTieredFee   Boolean @default(false)
+  /// Cents charged per Rs 1,000 of billAmount (rounded up to the next
+  /// 1,000) when useTieredFee is true — e.g. a rate of 20 charges 20 for a
+  /// Rs 1,000 bill and 100 for a Rs 5,000 bill. Ignored otherwise.
+  feePerThousand Int?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions ServiceTransaction[]
+
+  @@map("services")
+}
+
+/// Singleton row (id = 1) used to atomically generate gapless sequential service-transaction numbers
+model ServiceTransactionCounter {
+  id        Int @id @default(1)
+  lastValue Int @default(0)
+
+  @@map("service_transaction_counters")
+}
+
+/// A single cashier-recorded service transaction (e.g. an electricity bill
+/// paid at the counter, or a Cash Withdrawal/Deposit — see
+/// Service.direction) — kept entirely separate from product Sales. Always
+/// fully settled on the spot; unlike a product sale there is no khata/credit
+/// path for services.
+model ServiceTransaction {
+  id                String @id @default(uuid())
+  transactionNumber String @unique
+
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id])
+  cashierId String
+  cashier   User    @relation(fields: [cashierId], references: [id])
+
+  /// Snapshot of Service.direction at creation time — AccountingService
+  /// always classifies a transaction's cash-flow by this field, not a live
+  /// join to Service, so changing a service's direction later never
+  /// retroactively reclassifies its past transactions.
+  direction ServiceDirection
+
+  /// The customer's account/meter/reference number for this service, e.g. a meter number
+  referenceNumber String?
+
+  /// For BILL_PAYMENT: the underlying bill being paid, in cents (0 for a
+  /// fee-only service). For CASH_WITHDRAWAL/CASH_DEPOSIT: whichever side of
+  /// the transaction the cashier fixed via feeInclusive — see that field.
+  billAmount  Int
+  /// In cents — defaults from Service.defaultFee but may be overridden per-transaction
+  serviceFee  Int @default(0)
+  /// CASH_WITHDRAWAL/CASH_DEPOSIT only — confirmed by the cashier per
+  /// transaction (see ServiceTransactionsService.buildCashFlowData). Every
+  /// such transaction has a money-in side (a transfer for a withdrawal,
+  /// cash for a deposit) and a money-out side (cash for a withdrawal, a
+  /// transfer for a deposit), with fee = amountIn - amountOut:
+  ///   - true: billAmount IS amountIn; the fee comes out of it to produce
+  ///     amountOut (e.g. a withdrawal funded by a 1,000 transfer pays out
+  ///     980 cash with a 20 fee).
+  ///   - false (default): billAmount IS amountOut; the fee is added on top
+  ///     to produce amountIn (e.g. a withdrawal paying out 1,000 cash needs
+  ///     a 1,020 transfer to fund it).
+  /// Always false and irrelevant for BILL_PAYMENT, which is always additive
+  /// (totalAmount = billAmount + serviceFee, no amountIn/amountOut split).
+  feeInclusive Boolean @default(false)
+  /// The actual cash-drawer impact, always recalculated server-side, never
+  /// trusted from the client: billAmount + serviceFee for BILL_PAYMENT: for
+  /// CASH_WITHDRAWAL/CASH_DEPOSIT, whichever of amountIn/amountOut above
+  /// hits the drawer — amountOut for a withdrawal (cash paid out), amountIn
+  /// for a deposit (cash collected) — see
+  /// ServiceTransactionsService.buildCashFlowData.
+  totalAmount Int
+
+  /// BILL_PAYMENT: how the customer paid (CASH or TRANSFER — no khata/credit
+  /// path, unlike Sale). CASH_DEPOSIT is always recorded as CASH (money is
+  /// physically received). CASH_WITHDRAWAL is recorded as TRANSFER (nominally
+  /// what funds it) but AccountingService always treats it as a cash
+  /// outflow based on Service.direction, regardless of this field.
+  paymentMethod     PaymentMethod @default(CASH)
+  /// BILL_PAYMENT: set only for TRANSFER, required in that case. CASH_WITHDRAWAL/CASH_DEPOSIT: always required — the reference for the bank transfer that funds or receives the other side of the transaction.
+  transferReference String?
+
+  /// Cents tendered by the customer — must cover totalAmount in full. Always totalAmount (no change) for TRANSFER, CASH_WITHDRAWAL, or CASH_DEPOSIT.
+  amountReceived Int
+  /// amountReceived - totalAmount, in cents — always recalculated server-side. Always 0 outside a plain CASH bill payment.
+  changeDue      Int
+
+  /// Free-text note — e.g. a withdrawal/deposit customer's name or phone number
+  note String?
+
+  createdAt DateTime @default(now())
+
+  @@index([serviceId])
+  @@index([cashierId])
+  @@map("service_transactions")
+}
+
+/// A record of closing out a day's cash register. Snapshots that day's sales
+/// and cash flow at close time, alongside the admin-entered amount of
+/// today's cash drawer spent buying inventory during the day (there is no
+/// supplier/purchase module — this is a plain manual figure, not derived
+/// from stock-in records). Re-closing the same date overwrites its record.
+model DayClosing {
+  id String @id @default(uuid())
+
+  /// The business date this closing covers, truncated to midnight UTC — one closing per day
+  date DateTime @unique @db.Date
+
+  /// Total completed sales revenue for the day across all payment methods, in cents — snapshot at closing time
+  totalSales Int
+  /// Cash sales for the day (including split-sale cash), minus that day's cash refunds and Cash Withdrawal payouts, plus Cash Deposit intake, in cents — before inventory/expense deductions
+  cashFromSales Int
+  /// Cents handed out via Cash Withdrawal transactions during the day
+  cashWithdrawals Int @default(0)
+  /// Cents received via Cash Deposit transactions during the day
+  cashDeposits Int @default(0)
+  /// Shop expenses recorded for the day, in cents
+  expenses Int @default(0)
+  /// Admin-entered: cents of today's cash drawer spent buying inventory during the day
+  cashUsedForInventory Int @default(0)
+  /// cashFromSales - cashUsedForInventory, in cents — sales-driven cash left before shop expenses, feeds net-profit-adjacent reporting
+  cashRemainingFromSales Int
+  /// cashRemainingFromSales - expenses, in cents — the actual physical cash left in the drawer at close
+  netCashInHand Int
+
+  note String?
+
+  closedById String
+  closedBy   User     @relation(fields: [closedById], references: [id])
+  closedAt   DateTime @default(now())
+
+  @@map("day_closings")
+}
+
+/// Singleton row (id = 1) holding store branding, currency, and invoice defaults
+model BusinessSettings {
+  id        Int     @id @default(1)
+  storeName String  @default("My Store")
+  logoUrl   String?
+  address   String?
+  phone     String?
+  email     String?
+
+  currencyCode   String @default("USD")
+  currencySymbol String @default("$")
+
+  /// Prefills new products' tax rate in the catalog form; does not retroactively change existing products
+  defaultTaxRateBps Int    @default(0)
+  /// Label shown next to the tax line on invoices (e.g. "VAT", "GST")
+  taxLabel          String @default("Tax")
+
+  /// A batch expiring within this many days of today is "Expiring Soon" rather than "Good"
+  expiryWarningDays Int @default(30)
+
+  invoiceFooterNote String?
+  showLogoOnInvoice Boolean @default(true)
+
+  /// When true, globalDiscountType/globalDiscountValue apply to every product at
+  /// checkout instead of each product's own discountType/discountValue
+  globalDiscountEnabled Boolean       @default(false)
+  globalDiscountType    DiscountType?
+  /// Meaning depends on globalDiscountType: basis points if PERCENTAGE, cents if FIXED
+  globalDiscountValue   Int?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("business_settings")
+}
