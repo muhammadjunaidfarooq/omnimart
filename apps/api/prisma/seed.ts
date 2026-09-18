@@ -44,13 +44,13 @@ async function upsertUnit(
 async function main() {
   const admin = await upsertUser(
     'Admin',
-    'admin@ims.local',
+    'admin@omnimart.local',
     'Admin@123',
     Role.ADMIN,
   );
   const cashier = await upsertUser(
     'Cashier',
-    'cashier@ims.local',
+    'cashier@omnimart.local',
     'Cashier@123',
     Role.CASHIER,
   );

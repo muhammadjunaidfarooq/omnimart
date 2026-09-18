@@ -34,7 +34,7 @@ export function MobileNav({ role }: { role: Role }) {
             I
           </span>
           <SheetTitle className="font-semibold tracking-tight text-sidebar-foreground">
-            IMS <span className="font-normal text-sidebar-foreground/60">POS</span>
+            OmniMart <span className="font-normal text-sidebar-foreground/60">POS</span>
           </SheetTitle>
         </SheetHeader>
         <NavList role={role} onNavigate={() => setOpen(false)} />

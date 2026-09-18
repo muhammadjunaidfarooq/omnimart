@@ -1,4 +1,4 @@
-# IMS — Inventory & POS System
+# OmniMart — Inventory & POS System
 
 A point-of-sale and inventory management system for a retail store.
 
@@ -19,7 +19,7 @@ A point-of-sale and inventory management system for a retail store.
 
 ```bash
 git clone <repo-url>
-cd ims
+cd omnimart
 pnpm install
 ```
 
@@ -30,13 +30,13 @@ This installs dependencies for the root workspace and both `apps/api` and `apps/
 Create a Postgres database (adjust name/credentials as needed):
 
 ```bash
-createdb ims
+createdb omnimart
 ```
 
 Or with Docker:
 
 ```bash
-docker run --name ims-postgres -e POSTGRES_PASSWORD=password -p 5432:5432 -d postgres
+docker run --name omnimart-postgres -e POSTGRES_PASSWORD=password -p 5432:5432 -d postgres
 ```
 
 ## 3. Configure environment variables
@@ -50,7 +50,7 @@ cp apps/api/.env.example apps/api/.env
 ```
 
 ```env
-DATABASE_URL="postgresql://postgres:password@localhost:5432/ims?schema=public"
+DATABASE_URL="postgresql://postgres:password@localhost:5432/omnimart?schema=public"
 
 JWT_ACCESS_SECRET="change-me"
 JWT_ACCESS_EXPIRES_IN="15m"
@@ -85,10 +85,10 @@ pnpm --filter api prisma:seed
 
 The seed script creates:
 
-| Role    | Email             | Password    |
-| ------- | ----------------- | ----------- |
-| ADMIN   | admin@ims.local    | Admin@123   |
-| CASHIER | cashier@ims.local  | Cashier@123 |
+| Role    | Email                 | Password    |
+| ------- | --------------------- | ----------- |
+| ADMIN   | admin@omnimart.local   | Admin@123   |
+| CASHIER | cashier@omnimart.local | Cashier@123 |
 
 It also seeds baseline catalog lookups (categories, brands, units).
 

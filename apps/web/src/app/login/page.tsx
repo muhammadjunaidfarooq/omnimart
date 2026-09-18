@@ -20,7 +20,7 @@ import { ROLE_HOME } from "@/lib/auth";
 import { businessSettingsLogoSrc, fetchSettings, settingsKeys } from "@/lib/settings";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-const DEFAULT_STORE_NAME = "IMS POS";
+const DEFAULT_STORE_NAME = "OmniMart POS";
 
 export default function LoginPage() {
   const router = useRouter();

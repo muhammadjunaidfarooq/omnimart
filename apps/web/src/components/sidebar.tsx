@@ -9,7 +9,7 @@ export function Sidebar({ role }: { role: Role }) {
           I
         </span>
         <span>
-          IMS <span className="font-normal text-sidebar-foreground/60">POS</span>
+          OmniMart <span className="font-normal text-sidebar-foreground/60">POS</span>
         </span>
       </div>
       <NavList role={role} />
