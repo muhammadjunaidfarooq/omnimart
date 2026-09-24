@@ -62,7 +62,7 @@ async function main() {
       },
     });
     console.log(
-      `Backfilled "${product.name}": ${product.currentStock} units, no expiry.`,
+      `Backfilled "${product.name}": ${product.currentStock.toString()} units, no expiry.`,
     );
   }
 

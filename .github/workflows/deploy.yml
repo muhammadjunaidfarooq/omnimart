@@ -32,12 +32,11 @@ jobs:
       - name: Typecheck Web
         run: pnpm --filter web exec tsc --noEmit
 
-      # Non-blocking for now: the repo has pre-existing lint debt unrelated
-      # to any single change. Flip to blocking once that's cleaned up.
       - name: Lint API
         run: pnpm --filter api exec eslint .
-        continue-on-error: true
 
+      # Non-blocking for now: the repo has pre-existing lint debt unrelated
+      # to any single change. Flip to blocking once that's cleaned up.
       - name: Lint Web
         run: pnpm --filter web exec eslint .
         continue-on-error: true

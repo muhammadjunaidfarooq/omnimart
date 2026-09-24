@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { DiscountType, PaymentMethod } from '@prisma/client';
+import { DiscountType, PaymentMethod, Prisma } from '@prisma/client';
 import { SalesService } from './sales.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { KhataService } from '../khata/khata.service';
@@ -30,10 +30,21 @@ const SETTINGS = {
   globalDiscountValue: null,
 };
 
+/** Reads the `data` a mocked Prisma delegate method was last called with. */
+function lastCallData(
+  mockFn: jest.Mock<unknown, unknown[]>,
+): Record<string, unknown> {
+  return (mockFn.mock.calls.at(-1)?.[0] as { data: Record<string, unknown> })
+    .data;
+}
+
 describe('SalesService.checkout', () => {
   let prisma: MockPrisma;
   let inventoryService: jest.Mocked<
-    Pick<InventoryService, 'resolveLinePrice' | 'consumeFefo' | 'restockToBatches'>
+    Pick<
+      InventoryService,
+      'resolveLinePrice' | 'consumeFefo' | 'restockToBatches'
+    >
   >;
   let khataService: jest.Mocked<Pick<KhataService, 'settleOrCredit'>>;
   let service: SalesService;
@@ -44,10 +55,10 @@ describe('SalesService.checkout', () => {
       resolveLinePrice: jest.fn(),
       consumeFefo: jest.fn(),
       restockToBatches: jest.fn(),
-    } as never;
+    };
     khataService = {
       settleOrCredit: jest.fn(),
-    } as never;
+    };
 
     service = new SalesService(
       prisma as unknown as PrismaService,
@@ -57,20 +68,28 @@ describe('SalesService.checkout', () => {
 
     prisma.businessSettings.findUniqueOrThrow.mockResolvedValue(SETTINGS);
     prisma.$queryRaw.mockResolvedValue([{ lastValue: 1 }]);
-    prisma.sale.create.mockImplementation(({ data }: any) => ({
-      id: 'sale-1',
-      invoiceNumber: 'INV-000001',
-      ...data,
-    }));
+    prisma.sale.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'sale-1',
+        invoiceNumber: 'INV-000001',
+        ...data,
+      }),
+    );
     prisma.sale.findUniqueOrThrow.mockImplementation(() => ({ id: 'sale-1' }));
-    prisma.saleItem.create.mockImplementation(({ data }: any) => ({
-      id: `item-${data.productId}`,
-      ...data,
-    }));
-    inventoryService.resolveLinePrice.mockImplementation(async () => ({
+    prisma.saleItem.create.mockImplementation(
+      ({
+        data,
+      }: {
+        data: Record<string, unknown> & { productId: string };
+      }) => ({
+        id: `item-${data.productId}`,
+        ...data,
+      }),
+    );
+    inventoryService.resolveLinePrice.mockResolvedValue({
       costPrice: 100,
       sellingPrice: 200,
-    }));
+    });
   });
 
   function oneItem(overrides: Partial<Record<string, unknown>> = {}) {
@@ -85,12 +104,12 @@ describe('SalesService.checkout', () => {
         items: oneItem(),
         paymentMethod: PaymentMethod.CASH,
         cashTendered: 200,
-      } as any,
+      },
       'cashier-1',
     );
 
     expect(result.id).toBe('sale-1');
-    const saleData = prisma.sale.create.mock.calls[0][0].data;
+    const saleData = lastCallData(prisma.sale.create);
     expect(saleData.totalAmount).toBe(200);
     expect(saleData.changeDue).toBe(0);
     expect(saleData.paymentStatus).toBe('PAID');
@@ -105,11 +124,11 @@ describe('SalesService.checkout', () => {
         items: oneItem(),
         paymentMethod: PaymentMethod.CASH,
         cashTendered: 250,
-      } as any,
+      },
       'cashier-1',
     );
 
-    const saleData = prisma.sale.create.mock.calls[0][0].data;
+    const saleData = lastCallData(prisma.sale.create);
     expect(saleData.changeDue).toBe(50);
   });
 
@@ -122,7 +141,7 @@ describe('SalesService.checkout', () => {
           items: oneItem(),
           paymentMethod: PaymentMethod.CASH,
           cashTendered: 100,
-        } as any,
+        },
         'cashier-1',
       ),
     ).rejects.toThrow(BadRequestException);
@@ -141,7 +160,7 @@ describe('SalesService.checkout', () => {
           paymentMethod: PaymentMethod.SPLIT,
           cashAmount: 200,
           borrowerId: 'borrower-1',
-        } as any,
+        },
         'cashier-1',
       ),
     ).rejects.toThrow(BadRequestException);
@@ -152,7 +171,10 @@ describe('SalesService.checkout', () => {
 
     await expect(
       service.checkout(
-        { items: oneItem(), paymentMethod: PaymentMethod.CREDIT } as any,
+        {
+          items: oneItem(),
+          paymentMethod: PaymentMethod.CREDIT,
+        },
         'cashier-1',
       ),
     ).rejects.toThrow(BadRequestException);
@@ -170,7 +192,7 @@ describe('SalesService.checkout', () => {
         items: oneItem(),
         paymentMethod: PaymentMethod.CREDIT,
         borrowerId: 'borrower-1',
-      } as any,
+      },
       'cashier-1',
     );
 
@@ -178,7 +200,7 @@ describe('SalesService.checkout', () => {
       where: { id: 'borrower-1' },
       data: { creditBalance: { decrement: 50 } },
     });
-    const saleData = prisma.sale.create.mock.calls[0][0].data;
+    const saleData = lastCallData(prisma.sale.create);
     expect(saleData.amountPaid).toBe(50);
     expect(saleData.paymentStatus).toBe('PARTIALLY_PAID');
   });
@@ -195,7 +217,7 @@ describe('SalesService.checkout', () => {
         items: oneItem(),
         paymentMethod: PaymentMethod.CREDIT,
         borrowerId: 'borrower-1',
-      } as any,
+      },
       'cashier-1',
     );
 
@@ -204,7 +226,7 @@ describe('SalesService.checkout', () => {
       where: { id: 'borrower-1' },
       data: { creditBalance: { decrement: 200 } },
     });
-    const saleData = prisma.sale.create.mock.calls[0][0].data;
+    const saleData = lastCallData(prisma.sale.create);
     expect(saleData.amountPaid).toBe(200);
     expect(saleData.paymentStatus).toBe('PAID');
   });
@@ -228,7 +250,7 @@ describe('SalesService.checkout', () => {
         cashTendered: 250,
         borrowerId: 'borrower-1',
         creditChangeToBorrower: true,
-      } as any,
+      },
       'cashier-1',
     );
 
@@ -239,7 +261,7 @@ describe('SalesService.checkout', () => {
       50,
       'Cash overpayment credited at checkout',
     );
-    const saleData = prisma.sale.create.mock.calls[0][0].data;
+    const saleData = lastCallData(prisma.sale.create);
     // The change was credited away, not handed back — the sale record shows none due.
     expect(saleData.changeDue).toBe(0);
   });
@@ -254,11 +276,11 @@ describe('SalesService.checkout', () => {
         items: oneItem(),
         paymentMethod: PaymentMethod.CASH,
         cashTendered: 0,
-      } as any,
+      },
       'cashier-1',
     );
 
-    const saleData = prisma.sale.create.mock.calls[0][0].data;
+    const saleData = lastCallData(prisma.sale.create);
     expect(saleData.discountTotal).toBe(200); // clamped to the line's own subtotal
     expect(saleData.totalAmount).toBe(0);
   });
@@ -272,7 +294,7 @@ describe('SalesService.checkout', () => {
           items: oneItem({ unitPriceOverride: 50 }),
           paymentMethod: PaymentMethod.CASH,
           cashTendered: 50,
-        } as any,
+        },
         'cashier-1',
       ),
     ).rejects.toThrow(BadRequestException);
@@ -286,7 +308,7 @@ describe('SalesService.checkout', () => {
         items: oneItem({ quantity: 3 }),
         paymentMethod: PaymentMethod.CASH,
         cashTendered: 600,
-      } as any,
+      },
       'cashier-1',
     );
 
@@ -309,14 +331,16 @@ describe('SalesService.checkout', () => {
           items: oneItem(),
           paymentMethod: PaymentMethod.CASH,
           cashTendered: 200,
-        } as any,
+        },
         'cashier-1',
       ),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('rejects a sale line for an inactive product', async () => {
-    prisma.product.findMany.mockResolvedValue([makeProduct({ isActive: false })]);
+    prisma.product.findMany.mockResolvedValue([
+      makeProduct({ isActive: false }),
+    ]);
 
     await expect(
       service.checkout(
@@ -324,7 +348,7 @@ describe('SalesService.checkout', () => {
           items: oneItem(),
           paymentMethod: PaymentMethod.CASH,
           cashTendered: 200,
-        } as any,
+        },
         'cashier-1',
       ),
     ).rejects.toThrow(BadRequestException);
@@ -338,19 +362,21 @@ describe('SalesService.refund', () => {
 
   beforeEach(() => {
     prisma = createMockPrisma();
-    inventoryService = { restockToBatches: jest.fn() } as never;
+    inventoryService = { restockToBatches: jest.fn() };
     service = new SalesService(
       prisma as unknown as PrismaService,
       inventoryService as unknown as InventoryService,
       {} as unknown as KhataService,
     );
-    prisma.refund.create.mockImplementation(({ data }: any) => ({
-      id: 'refund-1',
-      ...data,
-    }));
+    prisma.refund.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'refund-1',
+        ...data,
+      }),
+    );
   });
 
-  function completedSale(items: any[]) {
+  function completedSale(items: Record<string, unknown>[]) {
     return {
       id: 'sale-1',
       invoiceNumber: 'INV-000001',
@@ -378,7 +404,7 @@ describe('SalesService.refund', () => {
     await expect(
       service.refund(
         'sale-1',
-        { items: [{ saleItemId: 'item-1', quantity: 2 }] } as any,
+        { items: [{ saleItemId: 'item-1', quantity: 2 }] },
         'admin-1',
       ),
     ).rejects.toThrow(BadRequestException);
@@ -392,7 +418,7 @@ describe('SalesService.refund', () => {
     });
 
     await expect(
-      service.refund('sale-1', { items: [] } as any, 'admin-1'),
+      service.refund('sale-1', { items: [] }, 'admin-1'),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -414,7 +440,10 @@ describe('SalesService.refund', () => {
 
     const refund = await service.refund(
       'sale-1',
-      { items: [{ saleItemId: 'item-1', quantity: 2 }], reason: 'damaged' } as any,
+      {
+        items: [{ saleItemId: 'item-1', quantity: 2 }],
+        reason: 'damaged',
+      },
       'admin-1',
     );
 
@@ -425,7 +454,7 @@ describe('SalesService.refund', () => {
     expect(refund.totalAmount).toBe(190);
 
     expect(inventoryService.restockToBatches).toHaveBeenCalledWith(
-      prisma,
+      prisma as unknown as Prisma.TransactionClient,
       expect.objectContaining({
         saleItemId: 'item-1',
         quantity: 2,

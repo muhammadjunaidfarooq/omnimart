@@ -1,8 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
-import { StockMovementType } from '@prisma/client';
+import { Prisma, StockMovementType } from '@prisma/client';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMockPrisma, MockPrisma } from '../test-utils/prisma-mock';
+
+function tx(prisma: MockPrisma): Prisma.TransactionClient {
+  return prisma as unknown as Prisma.TransactionClient;
+}
 
 describe('InventoryService.recordMovement', () => {
   let prisma: MockPrisma;
@@ -15,7 +19,7 @@ describe('InventoryService.recordMovement', () => {
 
   it('rejects a zero-quantity movement without writing a ledger entry', async () => {
     await expect(
-      service.recordMovement(prisma as any, {
+      service.recordMovement(tx(prisma), {
         productId: 'prod-1',
         type: StockMovementType.ADJUSTMENT,
         quantity: 0,
@@ -31,7 +35,7 @@ describe('InventoryService.recordMovement', () => {
     prisma.product.update.mockResolvedValue({ id: 'prod-1', currentStock: -1 });
 
     await expect(
-      service.recordMovement(prisma as any, {
+      service.recordMovement(tx(prisma), {
         productId: 'prod-1',
         type: StockMovementType.OUT,
         quantity: -5,
@@ -43,9 +47,12 @@ describe('InventoryService.recordMovement', () => {
   });
 
   it('applies the delta and writes a matching ledger entry', async () => {
-    prisma.product.update.mockResolvedValue({ id: 'prod-1', currentStock: 10 });
+    prisma.product.update.mockResolvedValue({
+      id: 'prod-1',
+      currentStock: 10,
+    });
 
-    await service.recordMovement(prisma as any, {
+    await service.recordMovement(tx(prisma), {
       productId: 'prod-1',
       type: StockMovementType.IN,
       quantity: 5,
@@ -78,7 +85,10 @@ describe('InventoryService.consumeFefo', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     service = new InventoryService(prisma as unknown as PrismaService);
-    prisma.product.update.mockResolvedValue({ id: 'prod-1', currentStock: 100 });
+    prisma.product.update.mockResolvedValue({
+      id: 'prod-1',
+      currentStock: 100,
+    });
   });
 
   it('rejects consuming more than is available across all batches, without mutating any batch', async () => {
@@ -87,7 +97,7 @@ describe('InventoryService.consumeFefo', () => {
     ]);
 
     await expect(
-      service.consumeFefo(prisma as any, {
+      service.consumeFefo(tx(prisma), {
         productId: 'prod-1',
         type: StockMovementType.OUT,
         quantity: 5,
@@ -103,7 +113,7 @@ describe('InventoryService.consumeFefo', () => {
       { id: 'batch-1', remainingQuantity: 10 },
     ]);
 
-    await service.consumeFefo(prisma as any, {
+    await service.consumeFefo(tx(prisma), {
       productId: 'prod-1',
       type: StockMovementType.OUT,
       quantity: 4,
@@ -116,7 +126,14 @@ describe('InventoryService.consumeFefo', () => {
       data: { remainingQuantity: { decrement: 4 } },
     });
     expect(prisma.stockMovement.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ quantity: -4, batchId: 'batch-1' }),
+      data: {
+        productId: 'prod-1',
+        type: StockMovementType.OUT,
+        quantity: -4,
+        reason: undefined,
+        userId: 'user-1',
+        batchId: 'batch-1',
+      },
     });
   });
 
@@ -128,7 +145,7 @@ describe('InventoryService.consumeFefo', () => {
       { id: 'batch-later', remainingQuantity: 10 },
     ]);
 
-    await service.consumeFefo(prisma as any, {
+    await service.consumeFefo(tx(prisma), {
       productId: 'prod-1',
       type: StockMovementType.OUT,
       quantity: 5,
@@ -151,7 +168,7 @@ describe('InventoryService.consumeFefo', () => {
       { id: 'batch-later', remainingQuantity: 10 },
     ]);
 
-    await service.consumeFefo(prisma as any, {
+    await service.consumeFefo(tx(prisma), {
       productId: 'prod-1',
       type: StockMovementType.OUT,
       quantity: 5,
@@ -183,7 +200,7 @@ describe('InventoryService.resolveLinePrice', () => {
       { remainingQuantity: 10, costPrice: 150, sellingPrice: 250 },
     ]);
 
-    const price = await service.resolveLinePrice(prisma as any, 'prod-1', 4);
+    const price = await service.resolveLinePrice(tx(prisma), 'prod-1', 4);
 
     expect(price).toEqual({ costPrice: 100, sellingPrice: 200 });
   });
@@ -194,7 +211,7 @@ describe('InventoryService.resolveLinePrice', () => {
       { remainingQuantity: 10, costPrice: 150, sellingPrice: 250 },
     ]);
 
-    const price = await service.resolveLinePrice(prisma as any, 'prod-1', 5);
+    const price = await service.resolveLinePrice(tx(prisma), 'prod-1', 5);
 
     expect(price).toEqual({ costPrice: 150, sellingPrice: 250 });
   });
@@ -208,7 +225,7 @@ describe('InventoryService.resolveLinePrice', () => {
       sellingPrice: 180,
     });
 
-    const price = await service.resolveLinePrice(prisma as any, 'prod-1', 5);
+    const price = await service.resolveLinePrice(tx(prisma), 'prod-1', 5);
 
     expect(price).toEqual({ costPrice: 90, sellingPrice: 180 });
   });
@@ -220,7 +237,7 @@ describe('InventoryService.resolveLinePrice', () => {
       sellingPrice: 180,
     });
 
-    const price = await service.resolveLinePrice(prisma as any, 'prod-1', 1);
+    const price = await service.resolveLinePrice(tx(prisma), 'prod-1', 1);
 
     expect(price).toEqual({ costPrice: 90, sellingPrice: 180 });
   });
@@ -233,7 +250,10 @@ describe('InventoryService.restockToBatches', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     service = new InventoryService(prisma as unknown as PrismaService);
-    prisma.product.update.mockResolvedValue({ id: 'prod-1', currentStock: 10 });
+    prisma.product.update.mockResolvedValue({
+      id: 'prod-1',
+      currentStock: 10,
+    });
     prisma.saleItem.findUniqueOrThrow.mockResolvedValue({
       id: 'item-1',
       productId: 'prod-1',
@@ -250,7 +270,7 @@ describe('InventoryService.restockToBatches', () => {
 
     // An earlier refund already restocked all 5 of batch A; this refund of 2
     // must resume inside batch B rather than re-touching batch A.
-    await service.restockToBatches(prisma as any, {
+    await service.restockToBatches(tx(prisma), {
       saleItemId: 'item-1',
       quantity: 2,
       alreadyRefunded: 5,
@@ -272,7 +292,7 @@ describe('InventoryService.restockToBatches', () => {
     });
     prisma.stockBatch.create.mockResolvedValue({ id: 'new-batch' });
 
-    await service.restockToBatches(prisma as any, {
+    await service.restockToBatches(tx(prisma), {
       saleItemId: 'item-1',
       quantity: 4,
       alreadyRefunded: 0,
@@ -280,14 +300,16 @@ describe('InventoryService.restockToBatches', () => {
     });
 
     expect(prisma.stockBatch.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+      data: {
         productId: 'prod-1',
         quantity: 4,
         remainingQuantity: 4,
         costPrice: 80,
         sellingPrice: 200, // mirrors what the sale item actually charged
         expiryDate: null,
-      }),
+        reason: undefined,
+        createdById: 'user-1',
+      },
     });
   });
 });

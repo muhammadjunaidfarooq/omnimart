@@ -55,15 +55,19 @@ export function createMockPrisma() {
     $queryRaw: jest.fn(),
   };
 
-  const prisma = {
-    ...tx,
-    $transaction: jest.fn((arg: unknown) => {
+  // Built in two steps (rather than a single self-referencing object literal)
+  // so `$transaction`'s implementation can close over the final `prisma`
+  // object — the same one tests assert calls against — without a circular
+  // type error.
+  const prisma = { ...tx } as typeof tx & { $transaction: jest.Mock };
+  prisma.$transaction = jest.fn(
+    (arg: ((tx: typeof prisma) => unknown) | unknown[]): unknown => {
       if (typeof arg === 'function') {
-        return (arg as (tx: typeof prisma) => unknown)(prisma);
+        return arg(prisma);
       }
-      return Promise.all(arg as unknown[]);
-    }),
-  };
+      return Promise.all(arg);
+    },
+  );
 
   return prisma;
 }

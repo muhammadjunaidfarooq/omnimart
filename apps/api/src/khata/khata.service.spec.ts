@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { PaymentMethod, PaymentStatus } from '@prisma/client';
+import { PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
 import { KhataService } from './khata.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMockPrisma, MockPrisma } from '../test-utils/prisma-mock';
@@ -17,6 +17,14 @@ function creditSale(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+/** Reads the `data` a mocked Prisma delegate method was last called with. */
+function lastCallData(
+  mockFn: jest.Mock<unknown, unknown[]>,
+): Record<string, unknown> {
+  return (mockFn.mock.calls.at(-1)?.[0] as { data: Record<string, unknown> })
+    .data;
+}
+
 describe('KhataService.recordPayment', () => {
   let prisma: MockPrisma;
   let service: KhataService;
@@ -24,10 +32,12 @@ describe('KhataService.recordPayment', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     service = new KhataService(prisma as unknown as PrismaService);
-    prisma.sale.update.mockImplementation(({ data }: any) => ({
-      id: 'sale-1',
-      ...data,
-    }));
+    prisma.sale.update.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'sale-1',
+        ...data,
+      }),
+    );
   });
 
   it('rejects paying a non-khata (CASH/TRANSFER) sale', async () => {
@@ -36,7 +46,11 @@ describe('KhataService.recordPayment', () => {
     );
 
     await expect(
-      service.recordPayment('sale-1', { amount: 100 } as any, 'admin-1'),
+      service.recordPayment(
+        'sale-1',
+        { amount: 100, paymentMethod: PaymentMethod.CASH },
+        'admin-1',
+      ),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -46,7 +60,11 @@ describe('KhataService.recordPayment', () => {
     );
 
     await expect(
-      service.recordPayment('sale-1', { amount: 100 } as any, 'admin-1'),
+      service.recordPayment(
+        'sale-1',
+        { amount: 100, paymentMethod: PaymentMethod.CASH },
+        'admin-1',
+      ),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -56,7 +74,11 @@ describe('KhataService.recordPayment', () => {
     );
 
     await expect(
-      service.recordPayment('sale-1', { amount: 100 } as any, 'admin-1'),
+      service.recordPayment(
+        'sale-1',
+        { amount: 100, paymentMethod: PaymentMethod.CASH },
+        'admin-1',
+      ),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -65,7 +87,7 @@ describe('KhataService.recordPayment', () => {
 
     const result = await service.recordPayment(
       'sale-1',
-      { amount: 200, paymentMethod: PaymentMethod.CASH } as any,
+      { amount: 200, paymentMethod: PaymentMethod.CASH },
       'admin-1',
     );
 
@@ -81,7 +103,7 @@ describe('KhataService.recordPayment', () => {
 
     await service.recordPayment(
       'sale-1',
-      { amount: 500, paymentMethod: PaymentMethod.CASH } as any,
+      { amount: 500, paymentMethod: PaymentMethod.CASH },
       'admin-1',
     );
 
@@ -96,7 +118,7 @@ describe('KhataService.recordPayment', () => {
 
     const result = await service.recordPayment(
       'sale-1',
-      { amount: 700, paymentMethod: PaymentMethod.CASH } as any,
+      { amount: 700, paymentMethod: PaymentMethod.CASH },
       'admin-1',
     );
 
@@ -118,7 +140,11 @@ describe('KhataService.recordPayment', () => {
 
     await service.recordPayment(
       'sale-1',
-      { amount: 700, paymentMethod: PaymentMethod.CASH, note: 'partial cash' } as any,
+      {
+        amount: 700,
+        paymentMethod: PaymentMethod.CASH,
+        note: 'partial cash',
+      },
       'admin-1',
     );
 
@@ -143,7 +169,9 @@ describe('KhataService.payAllOutstanding', () => {
     prisma = createMockPrisma();
     service = new KhataService(prisma as unknown as PrismaService);
     prisma.borrower.findUnique.mockResolvedValue({ id: 'borrower-1' });
-    prisma.sale.update.mockImplementation(({ data }: any) => ({ ...data }));
+    prisma.sale.update.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => ({ ...data }),
+    );
   });
 
   it('rejects when the borrower has no outstanding bills', async () => {
@@ -231,7 +259,9 @@ describe('KhataService.payFromCredit', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     service = new KhataService(prisma as unknown as PrismaService);
-    prisma.sale.update.mockImplementation(({ data }: any) => ({ ...data }));
+    prisma.sale.update.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => ({ ...data }),
+    );
   });
 
   it('rejects when the borrower has no credit balance', async () => {
@@ -260,11 +290,14 @@ describe('KhataService.payFromCredit', () => {
       where: { id: 'borrower-1' },
       data: { creditBalance: { decrement: 300 } },
     });
-    expect(prisma.khataPayment.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ amount: 300, method: PaymentMethod.CREDIT }),
-      }),
-    );
+    expect(lastCallData(prisma.khataPayment.create)).toEqual({
+      saleId: 'sale-1',
+      amount: 300,
+      method: PaymentMethod.CREDIT,
+      transferReference: undefined,
+      receivedById: 'admin-1',
+      note: 'Paid from store credit',
+    });
     expect(result.remainingDue).toBe(0);
   });
 
@@ -294,12 +327,14 @@ describe('KhataService.settleOrCredit', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     service = new KhataService(prisma as unknown as PrismaService);
-    prisma.sale.update.mockImplementation(({ data }: any) => ({ ...data }));
+    prisma.sale.update.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => ({ ...data }),
+    );
   });
 
   it('is a no-op for a non-positive amount', async () => {
     const result = await service.settleOrCredit(
-      prisma as any,
+      prisma as unknown as Prisma.TransactionClient,
       'borrower-1',
       'admin-1',
       0,
@@ -320,7 +355,7 @@ describe('KhataService.settleOrCredit', () => {
     ]);
 
     const result = await service.settleOrCredit(
-      prisma as any,
+      prisma as unknown as Prisma.TransactionClient,
       'borrower-1',
       'admin-1',
       150,
@@ -342,7 +377,7 @@ describe('KhataService.settleOrCredit', () => {
     prisma.sale.findMany.mockResolvedValue([]);
 
     const result = await service.settleOrCredit(
-      prisma as any,
+      prisma as unknown as Prisma.TransactionClient,
       'borrower-1',
       'admin-1',
       75,
