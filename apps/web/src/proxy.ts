@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { decodeAccessToken, ROLE_HOME } from "@/lib/auth";
+import { clearAuthCookies, decodeAccessToken, ROLE_HOME } from "@/lib/auth";
 
 const PUBLIC_PATHS = ["/login"];
-
-function clearAuthCookies(response: NextResponse) {
-  response.cookies.delete("access_token");
-  response.cookies.delete("refresh_token");
-  return response;
-}
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

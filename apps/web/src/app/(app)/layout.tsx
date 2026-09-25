@@ -9,7 +9,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect("/login");
+    // Not a plain redirect("/login") — a Server Component can't clear cookies
+    // itself, and the stale-but-unexpired token would still be sitting there
+    // for the middleware to see and bounce straight back to /admin or
+    // /cashier. /auth/session-expired clears both cookies first.
+    redirect("/auth/session-expired");
   }
 
   return (

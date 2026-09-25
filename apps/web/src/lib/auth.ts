@@ -1,3 +1,5 @@
+import type { NextResponse } from "next/server";
+
 export type Role = "ADMIN" | "CASHIER";
 
 export interface CurrentUser {
@@ -28,4 +30,16 @@ export function decodeAccessToken(
   } catch {
     return null;
   }
+}
+
+/**
+ * Clears both auth cookies on a response — the only correct way to end a
+ * session the server has rejected. Shared by the middleware's own redirect
+ * and by the /auth/session-expired route so a stale-but-unexpired token
+ * never survives to be seen again on the next request to /login.
+ */
+export function clearAuthCookies<T extends NextResponse>(response: T): T {
+  response.cookies.delete("access_token");
+  response.cookies.delete("refresh_token");
+  return response;
 }
