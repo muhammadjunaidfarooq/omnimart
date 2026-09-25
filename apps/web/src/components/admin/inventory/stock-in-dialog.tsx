@@ -12,12 +12,14 @@ import { Textarea } from "@/components/ui/textarea";
 import type { Product } from "@/lib/catalog";
 import { inventoryKeys, postStockIn } from "@/lib/inventory";
 import { centsToInput, formatMoney, inputToCents } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 
 interface Props {
   product: Product;
 }
 
 export function StockInDialog({ product }: Props) {
+  const currencySymbol = useCurrencySymbol();
   const [open, setOpen] = useState(false);
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState("");
@@ -141,7 +143,7 @@ export function StockInDialog({ product }: Props) {
         </div>
         <p className="-mt-2 text-xs text-muted-foreground">
           This batch keeps selling at this price until depleted, even if the product&apos;s price
-          changes later. Leave blank to use the current price ({formatMoney(product.sellingPrice)}).
+          changes later. Leave blank to use the current price ({formatMoney(product.sellingPrice, currencySymbol)}).
         </p>
         <div className="space-y-2">
           <Label htmlFor="si-reason">Reason (optional)</Label>

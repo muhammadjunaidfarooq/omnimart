@@ -596,8 +596,8 @@ model BusinessSettings {
   phone     String?
   email     String?
 
-  currencyCode   String @default("USD")
-  currencySymbol String @default("$")
+  currencyCode   String @default("PKR")
+  currencySymbol String @default("Rs ")
 
   /// Prefills new products' tax rate in the catalog form; does not retroactively change existing products
   defaultTaxRateBps Int    @default(0)

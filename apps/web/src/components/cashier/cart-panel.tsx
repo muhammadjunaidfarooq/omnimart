@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import type { DiscountType, Product } from "@/lib/catalog";
 import { bpsToPercentInput, centsToInput, formatMoney, inputToCents, percentInputToBps } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { salesKeys, saveDraft } from "@/lib/sales";
 import { useCartLineTotals, useCartTotals, type CartLine, useCart } from "./cart-context";
 import { CheckoutDialog } from "./checkout-dialog";
@@ -112,6 +113,7 @@ function LineDiscountDialog({ line }: { line: CartLine }) {
 
 function LinePriceOverrideDialog({ line }: { line: CartLine }) {
   const cart = useCart();
+  const currencySymbol = useCurrencySymbol();
   const [open, setOpen] = useState(false);
   const [price, setPrice] = useState(
     line.unitPriceOverride != null ? centsToInput(line.unitPriceOverride) : "",
@@ -132,7 +134,7 @@ function LinePriceOverrideDialog({ line }: { line: CartLine }) {
     }
     const cents = inputToCents(price);
     if (cents < line.product.activeCostPrice) {
-      toast.error(`Price can't be below cost price (${formatMoney(line.product.activeCostPrice)}).`);
+      toast.error(`Price can't be below cost price (${formatMoney(line.product.activeCostPrice, currencySymbol)}).`);
       return;
     }
     cart.setPriceOverride(line.lineId, cents);
@@ -165,8 +167,8 @@ function LinePriceOverrideDialog({ line }: { line: CartLine }) {
         />
         <p className="text-xs text-muted-foreground">
           Applies to this transaction only. Can&apos;t go below cost price (
-          {formatMoney(line.product.activeCostPrice)}). Leave blank to use the current price (
-          {formatMoney(line.product.activeSellingPrice)}).
+          {formatMoney(line.product.activeCostPrice, currencySymbol)}). Leave blank to use the current price (
+          {formatMoney(line.product.activeSellingPrice, currencySymbol)}).
         </p>
       </div>
     </Modal>
@@ -188,6 +190,7 @@ interface PricedEntryDialogProps {
  */
 export function PricedEntryDialog({ product, line, trigger }: PricedEntryDialogProps) {
   const cart = useCart();
+  const currencySymbol = useCurrencySymbol();
   const isFractional = product.unit.allowsFractionalQuantity;
   const [open, setOpen] = useState(false);
   const [quantity, setQuantity] = useState(line ? String(line.quantity) : "");
@@ -223,7 +226,7 @@ export function PricedEntryDialog({ product, line, trigger }: PricedEntryDialogP
       return;
     }
     if (cents < product.activeCostPrice * parsedQuantity) {
-      toast.error(`Total can't be below cost price (${formatMoney(product.activeCostPrice * parsedQuantity)}).`);
+      toast.error(`Total can't be below cost price (${formatMoney(product.activeCostPrice * parsedQuantity, currencySymbol)}).`);
       return;
     }
     if (line) {
@@ -278,6 +281,7 @@ export function PricedEntryDialog({ product, line, trigger }: PricedEntryDialogP
 
 function CartLineRow({ line }: { line: CartLine }) {
   const cart = useCart();
+  const currencySymbol = useCurrencySymbol();
   const totals = useCartLineTotals(line);
   const isFractional = line.product.unit.allowsFractionalQuantity;
   const isPricedEntry = line.lineTotalOverride != null && !line.amountEntry;
@@ -356,20 +360,20 @@ function CartLineRow({ line }: { line: CartLine }) {
         </p>
         <p className="font-mono text-xs text-muted-foreground">{line.product.sku}</p>
         {totals.lineDiscount > 0 && (
-          <p className="text-xs text-muted-foreground">−{formatMoney(totals.lineDiscount)} discount</p>
+          <p className="text-xs text-muted-foreground">−{formatMoney(totals.lineDiscount, currencySymbol)} discount</p>
         )}
         {isPricedEntry ? (
           <p className="text-xs text-muted-foreground">
-            {`Priced entry: ${line.quantity} ${line.product.unit.abbreviation} for ${formatMoney(line.lineTotalOverride!)}`}
+            {`Priced entry: ${line.quantity} ${line.product.unit.abbreviation} for ${formatMoney(line.lineTotalOverride!, currencySymbol)}`}
           </p>
         ) : isAmountEntry ? (
           <p className="text-xs text-muted-foreground">
-            {`Amount entry: ${formatMoney(line.lineTotalOverride!)} for ${line.quantity} ${line.product.unit.abbreviation}`}
+            {`Amount entry: ${formatMoney(line.lineTotalOverride!, currencySymbol)} for ${line.quantity} ${line.product.unit.abbreviation}`}
           </p>
         ) : (
           line.unitPriceOverride != null && (
             <p className="text-xs text-muted-foreground">
-              Price overridden to {formatMoney(line.unitPriceOverride)}
+              Price overridden to {formatMoney(line.unitPriceOverride, currencySymbol)}
             </p>
           )
         )}
@@ -418,7 +422,7 @@ function CartLineRow({ line }: { line: CartLine }) {
           </>
         )}
       </div>
-      <div className="w-20 shrink-0 text-right text-sm font-semibold">{formatMoney(totals.lineTotal)}</div>
+      <div className="w-20 shrink-0 text-right text-sm font-semibold">{formatMoney(totals.lineTotal, currencySymbol)}</div>
       <div className="flex shrink-0 items-center gap-1">
         {isPricedEntry ? (
           <PricedEntryDialog
@@ -452,6 +456,7 @@ interface Props {
 export function CartPanel({ invoiceHref }: Props = {}) {
   const cart = useCart();
   const totals = useCartTotals();
+  const currencySymbol = useCurrencySymbol();
   const queryClient = useQueryClient();
 
   const holdMutation = useMutation({
@@ -479,19 +484,19 @@ export function CartPanel({ invoiceHref }: Props = {}) {
       <div className="flex flex-col gap-2 border-t pt-4">
         <div className="flex justify-between text-sm text-muted-foreground">
           <span>Subtotal</span>
-          <span>{formatMoney(totals.subtotal)}</span>
+          <span>{formatMoney(totals.subtotal, currencySymbol)}</span>
         </div>
         <div className="flex justify-between text-sm text-muted-foreground">
           <span>Discount</span>
-          <span>−{formatMoney(totals.discountTotal)}</span>
+          <span>−{formatMoney(totals.discountTotal, currencySymbol)}</span>
         </div>
         <div className="flex justify-between text-sm text-muted-foreground">
           <span>Tax</span>
-          <span>{formatMoney(totals.taxTotal)}</span>
+          <span>{formatMoney(totals.taxTotal, currencySymbol)}</span>
         </div>
         <div className="flex justify-between text-base font-semibold">
           <span>Total</span>
-          <span>{formatMoney(totals.totalAmount)}</span>
+          <span>{formatMoney(totals.totalAmount, currencySymbol)}</span>
         </div>
 
         <div className="grid grid-cols-2 gap-2 pt-2">

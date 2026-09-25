@@ -12,6 +12,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { API_URL, type Product } from "@/lib/catalog";
 import { formatMoney } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { fetchSalesHistory, paymentMethodLabel, salesKeys, type Sale } from "@/lib/sales";
 import { useSortState } from "@/lib/use-sort";
 
@@ -37,6 +38,7 @@ function RefundBadge({ sale }: { sale: Sale }) {
 }
 
 export function SalesHistoryTable({ baseHref }: { baseHref: string }) {
+  const currencySymbol = useCurrencySymbol();
   const [page, setPage] = useState(1);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [from, setFrom] = useState("");
@@ -114,7 +116,7 @@ export function SalesHistoryTable({ baseHref }: { baseHref: string }) {
       sortKey: "totalAmount",
       headerClassName: "text-right",
       cellClassName: "text-right font-medium",
-      cell: (sale) => formatMoney(sale.totalAmount),
+      cell: (sale) => formatMoney(sale.totalAmount, currencySymbol),
     },
     {
       header: "Status",

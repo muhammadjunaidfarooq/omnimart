@@ -19,6 +19,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Switch } from "@/components/ui/switch";
 import { fetchBorrowers, khataKeys } from "@/lib/khata";
 import { centsToInput, formatMoney, inputToCents } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { checkout, salesKeys } from "@/lib/sales";
 import { useCart, useCartTotals } from "./cart-context";
 
@@ -40,6 +41,7 @@ interface Props {
 export function CheckoutDialog({ invoiceHref = (saleId) => `/cashier/sales/${saleId}` }: Props = {}) {
   const cart = useCart();
   const totals = useCartTotals();
+  const currencySymbol = useCurrencySymbol();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -193,7 +195,7 @@ export function CheckoutDialog({ invoiceHref = (saleId) => `/cashier/sales/${sal
         </Button>
       }
       title="Checkout"
-      description={`Total due: ${formatMoney(totals.totalAmount)}`}
+      description={`Total due: ${formatMoney(totals.totalAmount, currencySymbol)}`}
       footer={
         <Button form="checkout-form" type="submit" disabled={mutation.isPending}>
           {mutation.isPending ? "Processing…" : "Confirm payment (Enter)"}
@@ -228,11 +230,11 @@ export function CheckoutDialog({ invoiceHref = (saleId) => `/cashier/sales/${sal
             />
             {isShortfall ? (
               <p className="text-sm text-destructive">
-                {`Short by ${formatMoney(shortfallCents)} — select a customer below to bill the difference to their khata.`}
+                {`Short by ${formatMoney(shortfallCents, currencySymbol)} — select a customer below to bill the difference to their khata.`}
               </p>
             ) : isOverpay ? (
               <div className="flex flex-col gap-2">
-                <p className="text-sm text-muted-foreground">{`${formatMoney(overpayCents)} more than the bill.`}</p>
+                <p className="text-sm text-muted-foreground">{`${formatMoney(overpayCents, currencySymbol)} more than the bill.`}</p>
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -326,7 +328,7 @@ export function CheckoutDialog({ invoiceHref = (saleId) => `/cashier/sales/${sal
                 <div className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-3 text-sm">
                   {selectedBorrower.totalDue > 0 && (
                     <p className="text-muted-foreground">
-                      {`${selectedBorrower.name} also has ${formatMoney(selectedBorrower.totalDue)} outstanding from previous khata bills.`}
+                      {`${selectedBorrower.name} also has ${formatMoney(selectedBorrower.totalDue, currencySymbol)} outstanding from previous khata bills.`}
                     </p>
                   )}
                   {isShortfall && selectedBorrower.creditBalance > 0 && (
@@ -334,7 +336,7 @@ export function CheckoutDialog({ invoiceHref = (saleId) => `/cashier/sales/${sal
                       <div>
                         <Label htmlFor="use-credit">Use available credit</Label>
                         <p className="text-muted-foreground">
-                          {`${formatMoney(selectedBorrower.creditBalance)} available — confirm with the customer.`}
+                          {`${formatMoney(selectedBorrower.creditBalance, currencySymbol)} available — confirm with the customer.`}
                         </p>
                       </div>
                       <Switch id="use-credit" checked={useCredit} onCheckedChange={setUseCredit} />
@@ -367,10 +369,10 @@ export function CheckoutDialog({ invoiceHref = (saleId) => `/cashier/sales/${sal
             <p className="text-sm text-muted-foreground">
               {isShortfall
                 ? creditApplied > 0
-                  ? `${formatMoney(creditApplied)} of the customer's credit will be applied — ${remainingShortfall > 0 ? `${formatMoney(remainingShortfall)} will be marked unpaid until settled from the Khata page.` : "this fully covers the shortfall."}`
+                  ? `${formatMoney(creditApplied, currencySymbol)} of the customer's credit will be applied — ${remainingShortfall > 0 ? `${formatMoney(remainingShortfall, currencySymbol)} will be marked unpaid until settled from the Khata page.` : "this fully covers the shortfall."}`
                   : "The shortfall will be marked unpaid until settled from the Khata page."
                 : isOverpay && overpaymentChoice === "credit"
-                  ? `${formatMoney(overpayCents)} will be added to the customer's credit balance instead of being handed back.`
+                  ? `${formatMoney(overpayCents, currencySymbol)} will be added to the customer's credit balance instead of being handed back.`
                   : "This sale will be recorded under the selected customer."}
             </p>
           </div>

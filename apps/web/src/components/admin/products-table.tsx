@@ -33,6 +33,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { API_URL, productImageSrc, type Brand, type Category, type Product } from "@/lib/catalog";
 import { formatMoney } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { useSortState } from "@/lib/use-sort";
 import { ProductsBulkActions } from "./products-bulk-actions";
 
@@ -43,6 +44,7 @@ type ProductStockFilter = "all" | "out";
 
 export function ProductsTable() {
   const router = useRouter();
+  const currencySymbol = useCurrencySymbol();
   const [products, setProducts] = useState<Product[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -223,7 +225,7 @@ export function ProductsTable() {
       sortKey: "sellingPrice",
       headerClassName: "text-right",
       cellClassName: "text-right",
-      cell: (product) => formatMoney(product.sellingPrice),
+      cell: (product) => formatMoney(product.sellingPrice, currencySymbol),
     },
     {
       header: "Stock",

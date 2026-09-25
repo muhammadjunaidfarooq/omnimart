@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { fetchProduct } from "@/lib/catalog";
 import { formatMoney } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { deleteDraft, fetchDrafts, fetchSale, salesKeys, type Sale } from "@/lib/sales";
 import { useCart, type CartLine } from "./cart-context";
 
@@ -45,6 +46,7 @@ async function hydrateDraft(sale: Sale): Promise<CartLine[]> {
 
 export function HeldBillsSheet() {
   const cart = useCart();
+  const currencySymbol = useCurrencySymbol();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
 
@@ -104,7 +106,7 @@ export function HeldBillsSheet() {
                   <p className="text-sm font-medium">{sale.invoiceNumber}</p>
                   <p className="text-xs text-muted-foreground">
                     {sale.items.length} item{sale.items.length === 1 ? "" : "s"} ·{" "}
-                    {formatMoney(sale.totalAmount)}
+                    {formatMoney(sale.totalAmount, currencySymbol)}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">

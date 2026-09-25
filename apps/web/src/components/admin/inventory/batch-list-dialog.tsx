@@ -11,6 +11,7 @@ import type { Product, StockBatch } from "@/lib/catalog";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { fetchBatches, inventoryKeys } from "@/lib/inventory";
 import { formatMoney } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { useSortedRows } from "@/lib/use-sort";
 import { EditBatchDialog } from "./edit-batch-dialog";
 
@@ -29,6 +30,7 @@ const SORT_ACCESSORS: Record<string, (b: StockBatch) => string | number | null> 
 };
 
 export function BatchListDialog({ product }: Props) {
+  const currencySymbol = useCurrencySymbol();
   const [open, setOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -57,14 +59,14 @@ export function BatchListDialog({ product }: Props) {
       sortKey: "costPrice",
       headerClassName: "text-right",
       cellClassName: "text-right font-mono text-sm",
-      cell: (b) => formatMoney(b.costPrice),
+      cell: (b) => formatMoney(b.costPrice, currencySymbol),
     },
     {
       header: "Selling Price",
       sortKey: "sellingPrice",
       headerClassName: "text-right",
       cellClassName: "text-right font-mono text-sm",
-      cell: (b) => formatMoney(b.sellingPrice),
+      cell: (b) => formatMoney(b.sellingPrice, currencySymbol),
     },
     {
       header: "Expiry Date",

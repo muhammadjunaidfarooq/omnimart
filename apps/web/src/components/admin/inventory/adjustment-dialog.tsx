@@ -12,12 +12,14 @@ import { Textarea } from "@/components/ui/textarea";
 import type { Product } from "@/lib/catalog";
 import { inventoryKeys, postAdjustment } from "@/lib/inventory";
 import { centsToInput, formatMoney, inputToCents } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 
 interface Props {
   product: Product;
 }
 
 export function AdjustmentDialog({ product }: Props) {
+  const currencySymbol = useCurrencySymbol();
   const [open, setOpen] = useState(false);
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState("");
@@ -160,7 +162,7 @@ export function AdjustmentDialog({ product }: Props) {
             <p className="text-xs text-muted-foreground">
               {Number(qty) > 0
                 ? "This batch keeps selling at this price until depleted. Leave blank to use the current price " +
-                  `(${formatMoney(product.sellingPrice)}).`
+                  `(${formatMoney(product.sellingPrice, currencySymbol)}).`
                 : "With quantity at 0, this corrects the product's recorded price directly — use this when the price was entered wrong, not the stock count."}
             </p>
           </div>

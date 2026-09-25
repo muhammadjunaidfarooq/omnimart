@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMoney } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { createRefund, salesKeys, type RefundItemInput, type Sale } from "@/lib/sales";
 
 export function RefundDialog({ sale }: { sale: Sale }) {
+  const currencySymbol = useCurrencySymbol();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -31,7 +33,7 @@ export function RefundDialog({ sale }: { sale: Sale }) {
   const mutation = useMutation({
     mutationFn: (items: RefundItemInput[]) => createRefund(sale.id, items, reason || undefined),
     onSuccess: (refund) => {
-      toast.success(`Refunded ${formatMoney(refund.totalAmount)}.`);
+      toast.success(`Refunded ${formatMoney(refund.totalAmount, currencySymbol)}.`);
       queryClient.invalidateQueries({ queryKey: salesKeys.all });
       setOpen(false);
     },
@@ -86,7 +88,7 @@ export function RefundDialog({ sale }: { sale: Sale }) {
                 <p className="truncate text-sm font-medium">{item.productName}</p>
                 <p className="text-xs text-muted-foreground">
                   {item.refundableQuantity} of {item.quantity} refundable ·{" "}
-                  {formatMoney(item.unitPrice)} each
+                  {formatMoney(item.unitPrice, currencySymbol)} each
                 </p>
               </div>
               <Input

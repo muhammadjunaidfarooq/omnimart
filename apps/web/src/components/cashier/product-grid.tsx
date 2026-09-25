@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { API_URL, productImageSrc, type Category, type Product } from "@/lib/catalog";
 import { formatMoney } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import { useCart } from "./cart-context";
 
 const ALL_CATEGORIES = "all";
@@ -34,6 +35,7 @@ async function fetchProducts(search: string, categoryId: string): Promise<Produc
 
 export function ProductGrid() {
   const cart = useCart();
+  const currencySymbol = useCurrencySymbol();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [categoryId, setCategoryId] = useState(ALL_CATEGORIES);
@@ -126,7 +128,7 @@ export function ProductGrid() {
                     <p className="line-clamp-2 text-sm font-medium">{product.name}</p>
                     <p className="font-mono text-xs text-muted-foreground">{product.sku}</p>
                     <div className="flex items-center justify-between pt-1">
-                      <span className="text-sm font-semibold">{formatMoney(product.activeSellingPrice)}</span>
+                      <span className="text-sm font-semibold">{formatMoney(product.activeSellingPrice, currencySymbol)}</span>
                       {outOfStock ? (
                         <Badge variant="destructive">Out</Badge>
                       ) : (

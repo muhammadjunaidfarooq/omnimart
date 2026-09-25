@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { centsToInput, formatMoney, inputToCents } from "@/lib/money";
+import { useCurrencySymbol } from "@/lib/settings";
 import {
   computeTieredFee,
   createServiceTransaction,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/services";
 
 export function ServiceTransactionDialog() {
+  const currencySymbol = useCurrencySymbol();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [service, setService] = useState<Service | null>(null);
@@ -129,7 +131,7 @@ export function ServiceTransactionDialog() {
         isBillPayment
           ? method === "TRANSFER"
             ? `${transaction.transactionNumber} recorded.`
-            : `${transaction.transactionNumber} recorded — ${formatMoney(transaction.changeDue)} change due.`
+            : `${transaction.transactionNumber} recorded — ${formatMoney(transaction.changeDue, currencySymbol)} change due.`
           : `${transaction.transactionNumber} recorded.`,
       );
       queryClient.invalidateQueries({ queryKey: serviceTransactionsKeys.all });
@@ -232,12 +234,12 @@ export function ServiceTransactionDialog() {
                   </span>
                 ) : s.useTieredFee ? (
                   <span className="text-sm text-muted-foreground">
-                    Fee: {formatMoney(s.feePerThousand ?? 0)} / 1,000
+                    Fee: {formatMoney(s.feePerThousand ?? 0, currencySymbol)} / 1,000
                   </span>
                 ) : (
                   s.defaultFee != null && (
                     <span className="text-sm text-muted-foreground">
-                      Fee: {formatMoney(s.defaultFee)}
+                      Fee: {formatMoney(s.defaultFee, currencySymbol)}
                     </span>
                   )
                 )}
@@ -289,9 +291,9 @@ export function ServiceTransactionDialog() {
               <Label htmlFor="svc-fee">Service fee</Label>
               {isTiered ? (
                 <>
-                  <Input id="svc-fee" value={formatMoney(feeCents)} disabled readOnly />
+                  <Input id="svc-fee" value={formatMoney(feeCents, currencySymbol)} disabled readOnly />
                   <p className="text-xs text-muted-foreground">
-                    {formatMoney(service?.feePerThousand ?? 0)} per Rs 1,000, rounded up
+                    {formatMoney(service?.feePerThousand ?? 0, currencySymbol)} per Rs 1,000, rounded up
                   </p>
                 </>
               ) : (
@@ -309,7 +311,7 @@ export function ServiceTransactionDialog() {
 
           <div className="flex items-center justify-between rounded-lg border bg-muted/40 p-3">
             <span className="text-sm text-muted-foreground">Total to collect</span>
-            <span className="font-semibold">{formatMoney(totalCents)}</span>
+            <span className="font-semibold">{formatMoney(totalCents, currencySymbol)}</span>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -338,10 +340,10 @@ export function ServiceTransactionDialog() {
               />
               {isShort ? (
                 <p className="text-sm text-destructive">
-                  Short by {formatMoney(-changeCents)} — services must be paid in full.
+                  Short by {formatMoney(-changeCents, currencySymbol)} — services must be paid in full.
                 </p>
               ) : receivedCents > 0 ? (
-                <p className="text-sm text-muted-foreground">Change due: {formatMoney(changeCents)}</p>
+                <p className="text-sm text-muted-foreground">Change due: {formatMoney(changeCents, currencySymbol)}</p>
               ) : null}
             </div>
           ) : (
@@ -398,9 +400,9 @@ export function ServiceTransactionDialog() {
             <Label htmlFor="svc-cash-fee">Fee (optional)</Label>
             {isTiered ? (
               <>
-                <Input id="svc-cash-fee" value={formatMoney(feeCents)} disabled readOnly />
+                <Input id="svc-cash-fee" value={formatMoney(feeCents, currencySymbol)} disabled readOnly />
                 <p className="text-xs text-muted-foreground">
-                  {formatMoney(service?.feePerThousand ?? 0)} per Rs 1,000, rounded up
+                  {formatMoney(service?.feePerThousand ?? 0, currencySymbol)} per Rs 1,000, rounded up
                 </p>
               </>
             ) : (
@@ -436,7 +438,7 @@ export function ServiceTransactionDialog() {
               <span className="text-sm text-muted-foreground">
                 {isWithdrawal ? "Customer sends (transfer in)" : "Customer pays (cash in)"}
               </span>
-              <span className={isWithdrawal ? undefined : "font-semibold"}>{formatMoney(amountIn)}</span>
+              <span className={isWithdrawal ? undefined : "font-semibold"}>{formatMoney(amountIn, currencySymbol)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">
@@ -445,7 +447,7 @@ export function ServiceTransactionDialog() {
               <span
                 className={`${isWithdrawal ? "font-semibold" : ""} ${feeExceedsAmount ? "text-destructive" : ""}`}
               >
-                {formatMoney(amountOut)}
+                {formatMoney(amountOut, currencySymbol)}
               </span>
             </div>
           </div>
